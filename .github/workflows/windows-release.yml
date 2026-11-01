@@ -1,0 +1,82 @@
+# Builds the Windows app on Linux and publishes it for the nativeMons launcher: Diamond, Pearl, Platinum, HeartGold,
+# SoulSilver, Ruby, Sapphire and Emerald. Black and White are left out: their cores are recompiled from the cartridge itself,
+# which would need real ROMs on this public runner.
+# ROMs built from the decompilations here are only link maps for the native cores. They stay on the runner and are never
+# published, and the app reads each game's data from the player's own ROM.
+name: Windows release
+
+on:
+  push:
+    branches: [hails-additions]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: true
+
+env:
+  NP_DOCKER_CONTEXT: default
+  NP_JOBS: "4"
+  CMAKE_BUILD_PARALLEL_LEVEL: "4"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@v5
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
+
+      - name: Fetch toolchains
+        run: tools/fetch_toolchains.sh windows
+
+      - name: Fetch the GBA decompilations
+        run: |
+          mkdir -p .cache/gba
+          git clone -q https://github.com/pret/pokeemerald.git .cache/gba/pokeemerald
+          git -C .cache/gba/pokeemerald checkout -q 731ad5b
+          git clone -q https://github.com/pret/pokeruby.git .cache/gba/pokeruby
+          git -C .cache/gba/pokeruby checkout -q 5784633
+          git clone -q --depth 1 https://github.com/pret/agbcc.git .cache/gba/agbcc
+
+      - name: Build the link maps
+        run: |
+          for game in platinum diamond pearl heartgold soulsilver emerald ruby sapphire; do
+            echo "::group::$game"
+            tools/rom_build.sh "$game"
+            echo "::endgroup::"
+          done
+
+      - name: Build the cores
+        run: |
+          (cd games/platinum && make -f pc/Makefile.wasm -j4)
+          (cd games/diamond && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=PEARL)
+          (cd games/heartgold && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=SOULSILVER)
+          for game in emerald ruby sapphire; do games/gba-common/tools/gbabuild.py "$game" -j4; done
+
+      - name: Package for Windows
+        run: tools/package_windows.sh
+
+      - name: Check the package
+        run: |
+          zip="build/dist/nativeplat-windows-x64.zip"
+          unzip -l "$zip"
+          if unzip -Z1 "$zip" | grep -iE '\.(nds|srl|sav|gba)$'; then echo "Game data in the package"; exit 1; fi
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="windows-${GITHUB_SHA:0:9}"
+          gh release create "$tag" build/dist/nativeplat-windows-x64.zip \
+            --target "$GITHUB_SHA" --title "Windows build ($tag)" \
+            --notes "Diamond, Pearl, Platinum, HeartGold, SoulSilver, Ruby, Sapphire and Emerald for the nativeMons launcher. No games are included: you need your own ROMs."
