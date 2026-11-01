@@ -33,13 +33,19 @@ jobs:
 
       - uses: actions/checkout@v5
 
+      - name: Use a short path
+        # Linux limits one command to 128 KB, and some build steps list thousands of files by their full path.
+        run: sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
+
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
 
       - name: Fetch toolchains
+        working-directory: /g
         run: tools/fetch_toolchains.sh windows
 
       - name: Fetch the GBA decompilations
+        working-directory: /g
         run: |
           mkdir -p .cache/gba
           git clone -q https://github.com/pret/pokeemerald.git .cache/gba/pokeemerald
@@ -49,10 +55,12 @@ jobs:
           git clone -q --depth 1 https://github.com/pret/agbcc.git .cache/gba/agbcc
 
       - name: Fix a folder name for Linux
+        working-directory: /g
         # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
         run: sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
 
       - name: Build the link maps
+        working-directory: /g
         run: |
           for game in platinum diamond pearl heartgold soulsilver emerald ruby sapphire; do
             echo "::group::$game"
@@ -61,6 +69,7 @@ jobs:
           done
 
       - name: Build the cores
+        working-directory: /g
         run: |
           (cd games/platinum && make -f pc/Makefile.wasm -j4)
           (cd games/diamond && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=PEARL)
@@ -68,15 +77,18 @@ jobs:
           for game in emerald ruby sapphire; do games/gba-common/tools/gbabuild.py "$game" -j4; done
 
       - name: Package for Windows
+        working-directory: /g
         run: tools/package_windows.sh
 
       - name: Check the package
+        working-directory: /g
         run: |
           zip="build/dist/nativeplat-windows-x64.zip"
           unzip -l "$zip"
           if unzip -Z1 "$zip" | grep -iE '\.(nds|srl|sav|gba)$'; then echo "Game data in the package"; exit 1; fi
 
       - name: Publish
+        working-directory: /g
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

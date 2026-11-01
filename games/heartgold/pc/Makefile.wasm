@@ -234,7 +234,8 @@ POST_LINK ?= $(PYTHON) $(PCDIR)/tools/dp_arity_lint.py --allow $(MYPC)/arity_all
 $(TARGET): $(HG_FPFLOW) $(HG_C_OVERLAYS)
 $(TARGET): $(OBJS) $(LINK_EXTRA_DEPS)
 	@mkdir -p $(dir $@)
-	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LINK_EXTRA_OBJS) $(LDLIBS)
+	$(file >$@.rsp,$(OBJS) $(LINK_EXTRA_OBJS))
+	$(CC) $(LDFLAGS) -o $@ @$@.rsp $(LDLIBS)
 	@$(POST_LINK)
 
 W2C_DIR := $(BUILD)/wasm2c
