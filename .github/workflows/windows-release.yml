@@ -48,6 +48,10 @@ jobs:
           git -C .cache/gba/pokeruby checkout -q 5784633
           git clone -q --depth 1 https://github.com/pret/agbcc.git .cache/gba/agbcc
 
+      - name: Fix a folder name for Linux
+        # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
+        run: sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
+
       - name: Build the link maps
         run: |
           for game in platinum diamond pearl heartgold soulsilver emerald ruby sapphire; do
