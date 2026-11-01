@@ -66,7 +66,7 @@ case "${1:-}" in
         dir="$(cd "$ROOT/.cache/gba/$([ "$1" = emerald ] && echo pokeemerald || echo pokeruby)" && pwd -P)"
         agbcc="$(cd "$ROOT/.cache/gba/agbcc" && pwd -P)"
         target=$([ "$1" = emerald ] && echo "" || echo "$1")
-        run "$dir" "[ -x tools/agbcc/bin/agbcc ] || (cd '$agbcc' && ./install.sh '$dir'); make -j4 $target ${2:-}" ;;
+        run "$dir" "[ -x tools/agbcc/bin/agbcc ] || (cd '$agbcc' && { [ -x agbcc ] || ./build.sh; } && ./install.sh '$dir'); make -j4 $target ${2:-}" ;;
     *)
         echo "usage: $0 image|platinum|diamond|pearl|heartgold|soulsilver|emerald|ruby|sapphire" >&2
         exit 2 ;;
