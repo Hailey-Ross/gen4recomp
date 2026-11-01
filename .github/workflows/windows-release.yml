@@ -1,6 +1,4 @@
-# Builds the Windows app on Linux and publishes it for the nativeMons launcher: Diamond, Pearl, Platinum, HeartGold,
-# SoulSilver, Ruby, Sapphire and Emerald. Black and White are left out: their cores are recompiled from the cartridge itself,
-# which would need real ROMs on this public runner.
+# Builds the Windows app on Linux and publishes it for the nativeMons launcher: Platinum, Diamond and Pearl.
 # ROMs built from the decompilations here are only link maps for the native cores. They stay on the runner and are never
 # published, and the app reads each game's data from the player's own ROM.
 name: Windows release
@@ -44,25 +42,10 @@ jobs:
         working-directory: /g
         run: tools/fetch_toolchains.sh windows
 
-      - name: Fetch the GBA decompilations
-        working-directory: /g
-        run: |
-          mkdir -p .cache/gba
-          git clone -q https://github.com/pret/pokeemerald.git .cache/gba/pokeemerald
-          git -C .cache/gba/pokeemerald checkout -q 731ad5b
-          git clone -q https://github.com/pret/pokeruby.git .cache/gba/pokeruby
-          git -C .cache/gba/pokeruby checkout -q 5784633
-          git clone -q --depth 1 https://github.com/pret/agbcc.git .cache/gba/agbcc
-
-      - name: Fix a folder name for Linux
-        working-directory: /g
-        # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
-        run: sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
-
       - name: Build the link maps
         working-directory: /g
         run: |
-          for game in platinum diamond pearl heartgold soulsilver emerald ruby sapphire; do
+          for game in platinum diamond pearl; do
             echo "::group::$game"
             tools/rom_build.sh "$game"
             echo "::endgroup::"
@@ -73,8 +56,6 @@ jobs:
         run: |
           (cd games/platinum && make -f pc/Makefile.wasm -j4)
           (cd games/diamond && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=PEARL)
-          (cd games/heartgold && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=SOULSILVER)
-          for game in emerald ruby sapphire; do games/gba-common/tools/gbabuild.py "$game" -j4; done
 
       - name: Package for Windows
         working-directory: /g
@@ -95,4 +76,4 @@ jobs:
           tag="windows-${GITHUB_SHA:0:9}"
           gh release create "$tag" build/dist/nativeplat-windows-x64.zip \
             --target "$GITHUB_SHA" --title "Windows build ($tag)" \
-            --notes "Diamond, Pearl, Platinum, HeartGold, SoulSilver, Ruby, Sapphire and Emerald for the nativeMons launcher. No games are included: you need your own ROMs."
+            --notes "Platinum, Diamond and Pearl for the nativeMons launcher. No games are included: you need your own ROMs."
