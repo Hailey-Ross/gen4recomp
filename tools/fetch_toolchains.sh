@@ -71,16 +71,19 @@ sha_for() {
         "${WASI_NAME}.tar.gz")
             case "$HOST_WASI" in
                 arm64-macos) echo "${NP_SHA_WASI_ARM64_MACOS:-}" ;;
+                x86_64-linux) echo "${NP_SHA_WASI_X86_64_LINUX:-}" ;;
                 *) echo "" ;;
             esac ;;
         "${WABT_NAME}-${HOST_WABT}.tar.gz")
             case "$HOST_WABT" in
                 macos-arm64) echo "${NP_SHA_WABT_MACOS_ARM64:-}" ;;
+                linux-x64) echo "${NP_SHA_WABT_LINUX_X64:-}" ;;
                 *) echo "" ;;
             esac ;;
         "${ZIG_NAME}.tar.xz")
             case "$HOST_ZIG" in
                 aarch64-macos) echo "${NP_SHA_ZIG_AARCH64_MACOS:-}" ;;
+                x86_64-linux) echo "${NP_SHA_ZIG_X86_64_LINUX:-}" ;;
                 *) echo "" ;;
             esac ;;
         "${SDL3_MINGW_ARCHIVE}") echo "${NP_SHA_SDL3_MINGW:-}" ;;
