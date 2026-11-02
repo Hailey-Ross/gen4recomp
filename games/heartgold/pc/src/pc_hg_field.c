@@ -543,8 +543,7 @@ static void warp_frame(FieldSystem *fs, int ready) {
         if (v != NULL && sscanf(v, "%u:%u:%u:%u", &sMap, &sX, &sZ, &sDir) >= 3 && sDir < 4) sState = 1;
     }
     if (sState != 1 || !ready) return;
-    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u
-", sMap, sX, sZ, sDir);
+    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap, sX, sZ, sDir);
     sub_020538C0(fs, sMap, -1, sX, sZ, sDir);
     sState = 2;
 }
