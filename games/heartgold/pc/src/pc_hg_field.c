@@ -37,6 +37,7 @@
 #include "battle/battle_input.h"
 #include "battle/battle_system.h"
 #include "field_system.h"
+#include "field_warp_tasks.h"
 #include "map_events_internal.h"
 #include "map_matrix.h"
 #include "map_object.h"
@@ -524,6 +525,30 @@ static void fish_trace(FieldSystem *fs) {
     lastTimer = work->timer;
 }
 
+/*
+ * PC_WARP=MAP:X:Z[:DIR], as D/P's pc/game/pc_dp_field.c has it: at the first
+ * moment the player is free in the field, a map change to MAP at tile X,Z
+ * facing DIR (0 up, 1 down, 2 left, 3 right), through the same field task the
+ * game's own warps run, so the map's people are loaded as on any arrival.
+ */
+static void warp_frame(FieldSystem *fs, int ready) {
+    extern char *getenv(const char *);
+    extern int sscanf(const char *restrict, const char *restrict, ...);
+    static int sState; /* 0 unread, 1 pending, 2 done */
+    static unsigned sMap, sX, sZ, sDir;
+
+    if (sState == 0) {
+        const char *v = getenv("PC_WARP");
+        sState = 2;
+        if (v != NULL && sscanf(v, "%u:%u:%u:%u", &sMap, &sX, &sZ, &sDir) >= 3 && sDir < 4) sState = 1;
+    }
+    if (sState != 1 || !ready) return;
+    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u
+", sMap, sX, sZ, sDir);
+    sub_020538C0(fs, sMap, -1, sX, sZ, sDir);
+    sState = 2;
+}
+
 static void np_frame(void) {
     FieldSystem *fs = pc_hg_field_system();
     const int ready = field_ready(fs);
@@ -532,6 +557,7 @@ static void np_frame(void) {
     pc_np_stat.map_id = fs != NULL && fs->location != NULL ? (unsigned)fs->location->mapId : 0;
 
     e2e_frame(fs, ready);
+    warp_frame(fs, ready);
     fish_trace(fs);
     if (ready) rules_check();
 
