@@ -542,6 +542,8 @@ static void warp_frame(FieldSystem *fs, int ready) {
         sState = 2;
         if (v != NULL && sscanf(v, "%u:%u:%u:%u", &sMap, &sX, &sZ, &sDir) >= 3 && sDir < 4) sState = 1;
     }
+    /* The launcher's wallpaper is of the town, not of someone standing in it. */
+    if (sState == 2 && sMap != 0 && ready) MapObject_SetVisible(PlayerAvatar_GetMapObject(fs->playerAvatar), TRUE);
     if (sState != 1 || !ready) return;
     fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap, sX, sZ, sDir);
     sub_020538C0(fs, sMap, -1, sX, sZ, sDir);
