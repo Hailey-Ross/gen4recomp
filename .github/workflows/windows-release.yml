@@ -6,8 +6,13 @@ name: Windows release
 on:
   push:
     branches: [hails-additions]
-    paths-ignore: ["**.md"]
+    paths-ignore: ["**.md", "docs/**", "tests/**"]
   workflow_dispatch:
+    inputs:
+      clean:
+        description: Rebuild every game, ignoring saved results. Use for anything going to main.
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -22,50 +27,112 @@ env:
   CMAKE_BUILD_PARALLEL_LEVEL: "4"
 
 jobs:
-  build:
+  # Each game builds on a runner of its own, and its compiled core is kept until something it's built from changes.
+  # Only libraries and the compiler's own files are ever kept: never games/*/build, which holds the ROM link maps.
+  core:
     runs-on: ubuntu-24.04
-    timeout-minutes: 350
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { game: platinum, dir: platinum, ver: "", trees: "games/platinum" }
+          - { game: diamond, dir: diamond, ver: "", trees: "games/platinum games/diamond" }
+          - { game: pearl, dir: diamond, ver: "GAME_VERSION=PEARL", trees: "games/platinum games/diamond" }
+          - { game: heartgold, dir: heartgold, ver: "", trees: "games/platinum games/diamond games/ndsrec games/heartgold" }
+          - { game: soulsilver, dir: heartgold, ver: "GAME_VERSION=SOULSILVER", trees: "games/platinum games/diamond games/ndsrec games/heartgold" }
     steps:
-      - name: Free disk space
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-
       - uses: actions/checkout@v5
 
-      - name: Use a short path
+      - name: Work out what this game is built from
+        id: key
+        run: echo "h=$(for p in core tools ${{ matrix.trees }}; do git rev-parse HEAD:$p; done | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+
+      - name: Use the saved core
+        id: saved
+        if: ${{ !inputs.clean }}
+        uses: actions/cache@v4
+        with:
+          path: guest/
+          key: guest-${{ matrix.game }}-${{ steps.key.outputs.h }}
+
+      - name: Free disk space
+        if: steps.saved.outputs.cache-hit != 'true'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Set up
+        if: steps.saved.outputs.cache-hit != 'true'
         # Linux limits one command to 128 KB, and some build steps list thousands of files by their full path.
-        run: sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
-
-      - name: Install tools
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
-
-      - name: Fetch toolchains
-        working-directory: /g
-        run: tools/fetch_toolchains.sh windows
-
-      - name: Fix a folder name for Linux
-        working-directory: /g
-        # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
-        run: sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
-
-      - name: Build the link maps
-        working-directory: /g
         run: |
-          for game in platinum diamond pearl heartgold soulsilver; do
-            echo "::group::$game"
-            tools/rom_build.sh "$game"
-            echo "::endgroup::"
-          done
+          sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
 
-      - name: Build the cores
+      - name: Restore the compiler's runtime
+        if: steps.saved.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/zig
+          key: zig-${{ hashFiles('tools/toolchains.lock') }}
+
+      - name: Build
+        if: steps.saved.outputs.cache-hit != 'true'
         working-directory: /g
+        env:
+          NP_WIN_TARGET: np_guest_${{ matrix.game }}
         run: |
-          (cd games/platinum && make -f pc/Makefile.wasm -j4)
-          (cd games/diamond && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=PEARL)
-          (cd games/heartgold && make -f pc/Makefile.wasm -j4 && make -f pc/Makefile.wasm -j4 GAME_VERSION=SOULSILVER)
+          tools/fetch_toolchains.sh windows
+          # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
+          sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
+          # The other games' builds use tools that Platinum's sets up.
+          [ "${{ matrix.game }}" = platinum ] || tools/rom_build.sh platinum
+          tools/rom_build.sh ${{ matrix.game }}
+          (cd games/platinum && [ "${{ matrix.game }}" = platinum ] && make -f pc/Makefile.wasm -j4 || true)
+          [ "${{ matrix.dir }}" = platinum ] || (cd games/${{ matrix.dir }} && make -f pc/Makefile.wasm -j4 ${{ matrix.ver }})
+          [ "${{ matrix.dir }}" != platinum ] || test -f games/platinum/build/pc-wasm/pokeplatinum.wasm
+          tools/package_windows.sh
+          mkdir -p guest
+          cp "$(find build/win-app -name "*np_guest_${{ matrix.game }}*.a" | head -1)" guest/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guest-${{ matrix.game }}
+          path: guest/*.a
+          retention-days: 1
+          if-no-files-found: error
+
+  package:
+    needs: core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up
+        run: |
+          sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: guest
+          merge-multiple: true
+
+      - name: Save the compiler's runtime
+        uses: actions/cache@v4
+        with:
+          path: .cache/zig
+          key: zig-${{ hashFiles('tools/toolchains.lock') }}
 
       - name: Package for Windows
         working-directory: /g
-        run: tools/package_windows.sh
+        run: |
+          tools/fetch_toolchains.sh windows
+          for game in platinum diamond pearl heartgold soulsilver; do
+            lib="$(find /g/guest -name "*np_guest_$game*.a" | head -1)"
+            [ -n "$lib" ] || { echo "no core for $game"; exit 1; }
+            export "NP_GUEST_PREBUILT_$game=$lib"
+          done
+          tools/package_windows.sh
 
       - name: Check the package
         working-directory: /g

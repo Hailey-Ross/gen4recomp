@@ -218,23 +218,27 @@ all: $(TARGET)
 HG_LINT_ASM = $(ARMREC_S) $(EXTRACTED_ASM)
 HG_LINT_C = $(addprefix $(ROOT)/,$(GAME_DIRECT)) $(GAME_PREP:%=$(BUILD)/prep/%) \
             $(MYPC)/src/pc_hg_dsprot.c $(MYPC)/src/pc_hg_crt0.c $(MYPC)/src/pc_hg_field.c
-POST_LINK ?= $(PYTHON) $(PCDIR)/tools/dp_arity_lint.py --allow $(MYPC)/arity_allow.txt \
-               $(OBJ) $(HG_LINT_ASM) && \
-             $(PYTHON) $(PCDIR)/tools/dp_retwidth_lint.py --allow $(MYPC)/retwidth_allow.txt \
-               $(OBJ) $(ROMBUILD) $(HG_LINT_ASM) && \
-             $(PYTHON) $(PCDIR)/tools/dp_voidret_lint.py --allow $(MYPC)/voidret_allow.txt \
-               $(OBJ) $(HG_LINT_ASM) && \
-             $(PYTHON) $(PCDIR)/tools/dp_adjacency_lint.py $(WASM_MAP) $(HG_LINT_ASM) && \
-             $(PYTHON) $(PCDIR)/tools/dp_ovlabel_lint.py --allow $(MYPC)/ovlabel_allow.txt \
-               --xmap $(ROM_XMAP) --ovmap $(HG_C_OVERLAYS) $(HG_LINT_ASM) $(HG_LINT_C) && \
-             $(PYTHON) $(FPFLOW) solve --allow $(MYPC)/fpflow_allow.txt $(HG_FPFLOW) && \
-             $(PYTHON) $(PLAT)/pc/wasm/patch_ov_addrs.py $(TARGET) $(WASM_MAP) $(HG_OVSTATICS_C) && \
-             $(PYTHON) $(PLAT)/pc/wasm/check_module.py $(TARGET) \
+HG_TOOL = $(PYTHON) $(MYPC)/tools_argfile.py
+POST_LINK ?= $(HG_TOOL) $(PCDIR)/tools/dp_arity_lint.py --allow $(MYPC)/arity_allow.txt \
+               $(OBJ) @$(TARGET).hg_lint_asm && \
+             $(HG_TOOL) $(PCDIR)/tools/dp_retwidth_lint.py --allow $(MYPC)/retwidth_allow.txt \
+               $(OBJ) $(ROMBUILD) @$(TARGET).hg_lint_asm && \
+             $(HG_TOOL) $(PCDIR)/tools/dp_voidret_lint.py --allow $(MYPC)/voidret_allow.txt \
+               $(OBJ) @$(TARGET).hg_lint_asm && \
+             $(HG_TOOL) $(PCDIR)/tools/dp_adjacency_lint.py $(WASM_MAP) @$(TARGET).hg_lint_asm && \
+             $(HG_TOOL) $(PCDIR)/tools/dp_ovlabel_lint.py --allow $(MYPC)/ovlabel_allow.txt \
+               --xmap $(ROM_XMAP) --ovmap $(HG_C_OVERLAYS) @$(TARGET).hg_lint_asm @$(TARGET).hg_lint_c && \
+             $(HG_TOOL) $(FPFLOW) solve --allow $(MYPC)/fpflow_allow.txt @$(TARGET).hg_fpflow && \
+             $(HG_TOOL) $(PLAT)/pc/wasm/patch_ov_addrs.py $(TARGET) $(WASM_MAP) $(HG_OVSTATICS_C) && \
+             $(HG_TOOL) $(PLAT)/pc/wasm/check_module.py $(TARGET) \
                $(NPROOT)/core/include/np_guest_abi.h $(PCDIR)/stubs.list --map $(WASM_MAP)
 $(TARGET): $(HG_FPFLOW) $(HG_C_OVERLAYS)
 $(TARGET): $(OBJS) $(LINK_EXTRA_DEPS)
 	@mkdir -p $(dir $@)
 	$(file >$@.rsp,$(OBJS) $(LINK_EXTRA_OBJS))
+	$(file >$@.hg_lint_asm,$(HG_LINT_ASM))
+	$(file >$@.hg_lint_c,$(HG_LINT_C))
+	$(file >$@.hg_fpflow,$(HG_FPFLOW))
 	$(CC) $(LDFLAGS) -o $@ @$@.rsp $(LDLIBS)
 	@$(POST_LINK)
 

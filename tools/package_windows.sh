@@ -55,6 +55,13 @@ guest_args=() built=()
 : "${NP_GUEST_WASM_soulsilver:=$ROOT/games/heartgold/build/pc-wasm/pokesoulsilver.wasm}"
 : "${NP_GUEST_WASM_poketransfer:=$ROOT/games/ndsrec/build/pc-wasm/ndsrec-poketransfer.wasm}"
 for game in diamond pearl platinum black white heartgold soulsilver ruby sapphire emerald poketransfer; do
+    pre="NP_GUEST_PREBUILT_$game"
+    if [ -f "${!pre:-}" ]; then
+        guest_args+=("-D$pre=${!pre}")
+        built+=("$game")
+        echo "package_windows: using the built $game (${!pre})"
+        continue
+    fi
     var="NP_GUEST_WASM_$game"
     wasm="${!var:-}"
     if [ -n "$wasm" ] && [ -f "$wasm" ]; then
@@ -71,7 +78,9 @@ cmake -S "$ROOT/shell" -B "$BUILD" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$ROOT/tools/cmake/windows-x64.cmake" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-g0 -DNP_CORE=real -DBUILD_TESTING=OFF \
     "${guest_args[@]}"
-cmake --build "$BUILD" --target nativeplat
+cmake --build "$BUILD" --target "${NP_WIN_TARGET:-nativeplat}"
+# A job building one game's core stops at its library.
+[ -z "${NP_WIN_TARGET:-}" ] || exit 0
 
 STAGE="$DIST/$NAME"
 rm -rf "$STAGE" "$DIST/$NAME.zip"
