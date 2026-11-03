@@ -103,6 +103,16 @@ wireless must be on here too. It receives the child program from there and
 plays it. When the six are transferred, the child saves this slot without
 them.
 
+`NP_QUICK_START=title` with `--game` runs the opening uncapped and silent,
+presses Start once the copyright has gone (it can't be skipped; Platinum,
+Diamond and Pearl take Start at frame 400), and plays on from the title
+screen. `NP_QUICK_START=wait` does the same in a hidden window, then stops at
+the title, prints `nativeplat: quick-start ready` on stdout and waits for a
+`play` line on stdin to show itself; the end of stdin quits. The nativeMons
+launcher keeps its last game waiting like this while its menu is open. The
+game reads its save while it boots, so a waiting game is only shown if its
+save hasn't changed since.
+
 *Options > Real-time clock* feeds the device's local time to the game's RTC
 (default), or the port's fixed clock (2009-03-22 10:00, advancing with frames);
 it applies from the next boot.

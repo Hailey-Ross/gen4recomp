@@ -224,6 +224,11 @@ typedef struct np_app {
     double accum_ns;
     uint64_t last_ns;
     int ff_toggle, ff_hold;
+    /* nativeMons quick start (NP_QUICK_START, main.c): straight to the title screen, or waiting there unseen. */
+    int quick;              /* 0 off, 1 to the title, 2 to the title and wait for "play" */
+    int quick_state;        /* 0 done, 1 running to the title, 2 waiting */
+    int quick_ran;          /* game frames run on the way */
+    SDL_AtomicInt quick_go; /* from the stdin reader: 1 "play", 2 stdin closed */
     int backgrounded, minimized, focused;
     np_layout layout;
 

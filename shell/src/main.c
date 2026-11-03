@@ -21,6 +21,7 @@
 #include <SDL3/SDL_main.h>
 
 #include <math.h>
+#include <stdio.h>
 
 #include "app.h"
 #include "card.h"
@@ -1097,8 +1098,99 @@ static int run_one(np_app *app, const np_input *in)
     return -1;
 }
 
+/* ---- nativeMons quick start ------------------------------------------------- */
+/*
+ * NP_QUICK_START=title: a game started from the command line runs its opening
+ * uncapped and silent, presses Start once the copyright has gone (it can't be
+ * skipped), and plays on from its title screen. NP_QUICK_START=wait: the same
+ * in a window that stays hidden; at the title the game stops, prints
+ * "nativeplat: quick-start ready" on stdout, and waits for a "play" line on
+ * stdin to show itself. The end of stdin ends it. The nativeMons launcher
+ * keeps the last game waiting like this while its menu is open.
+ *
+ * Platinum, Diamond and Pearl all take Start at frame 400 and show PRESS
+ * START by frame 500 (NP_AUTOTEST pictures every 50 frames; Start at 200 or
+ * 300 is ignored during the copyright). The game reads its save while it
+ * boots, so whoever keeps one waiting must check the save didn't change
+ * meanwhile.
+ */
+#define QUICK_PRESS_AT 400
+#define QUICK_PRESS_FOR 8
+#define QUICK_READY_AT 540
+#define QUICK_KEY_START (1u << 3) /* parse_keys order: a, b, select, start */
+
+static int quick_reader(void *data)
+{
+    np_app *app = data;
+    char line[128];
+    while (fgets(line, sizeof line, stdin))
+        if (SDL_strstr(line, "play"))
+            SDL_SetAtomicInt(&app->quick_go, 1);
+    SDL_SetAtomicInt(&app->quick_go, 2);
+    return 0;
+}
+
+static void quick_init(np_app *app)
+{
+    const char *mode = SDL_getenv("NP_QUICK_START");
+    if (!mode || app->autotest.active)
+        return;
+    app->quick = !SDL_strcmp(mode, "wait") ? 2 : !SDL_strcmp(mode, "title") ? 1 : 0;
+    if (app->quick == 2) {
+        SDL_Thread *t = SDL_CreateThread(quick_reader, "quick-start", app);
+        if (t)
+            SDL_DetachThread(t);
+        else
+            app->quick = 1;
+    }
+}
+
+/* Frames for one iterate on the way to the title; 1 once it's there. */
+static int quick_run(np_app *app)
+{
+    uint64_t now = SDL_GetTicksNS();
+    do {
+        np_input in = {0};
+        int off = app->quick_ran - QUICK_PRESS_AT;
+        if (off >= 0 && off < QUICK_PRESS_FOR)
+            in.keys = QUICK_KEY_START;
+        if (run_one(app, &in))
+            return 0;
+        app->quick_ran++;
+        int16_t drop[1024 * 2];
+        while (np_core_audio_read(app->core, drop, 1024) > 0) {
+        }
+    } while (app->quick_ran < QUICK_READY_AT && SDL_GetTicksNS() - now < UNCAPPED_SLICE_NS);
+    return app->quick_ran >= QUICK_READY_AT;
+}
+
+static void quick_done(np_app *app)
+{
+    app->quick_state = 0;
+    app->accum_ns = 0;
+    app->last_ns = SDL_GetTicksNS();
+    upload_frame(app);
+}
+
 static void run_game(np_app *app)
 {
+    if (app->quick && !app->quick_ran && !app->quick_state)
+        app->quick_state = 1; /* the first frame of a game started with NP_QUICK_START */
+    if (app->quick_state == 2)
+        return;
+    if (app->quick_state == 1) {
+        if (!quick_run(app))
+            return;
+        if (app->quick == 2) {
+            app->quick_state = 2;
+            upload_frame(app);
+            fprintf(stdout, "nativeplat: quick-start ready\n");
+            fflush(stdout);
+        } else {
+            quick_done(app);
+        }
+        return;
+    }
     uint64_t now = SDL_GetTicksNS();
     uint64_t dt = now - app->last_ns;
     app->last_ns = now;
@@ -1201,7 +1293,8 @@ static void draw(np_app *app)
 
 static void update_audio_state(np_app *app)
 {
-    int want = app->view == NP_VIEW_GAME && app->page == NP_PAGE_NONE && !app->backgrounded && !app->minimized;
+    int want = app->view == NP_VIEW_GAME && app->page == NP_PAGE_NONE && !app->backgrounded && !app->minimized &&
+               !app->quick_state; /* silent on the way to the title and while waiting there */
     if (want != app->audio_running) {
         np_audio_set_paused(app, !want);
         app->audio_running = want;
@@ -1984,6 +2077,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         np_touchpad_load(app);
 
     SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    quick_init(app);
+    if (app->quick == 2)
+        flags |= SDL_WINDOW_HIDDEN; /* shown on "play" */
     if (!SDL_CreateWindowAndRenderer("nativeplat", win_w, win_h, flags, &app->window, &app->renderer)) {
         SDL_Log("window: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -2179,6 +2275,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     app->out_h = (float)h;
     if (app->autotest.active)
         return autotest_iterate(app);
+    if (app->quick_state == 2) {
+        /* Waiting at the title, unseen and stopped, for the launcher's "play". */
+        int go = SDL_GetAtomicInt(&app->quick_go);
+        if (go == 2)
+            return SDL_APP_SUCCESS;
+        if (go != 1) {
+            SDL_Delay(30);
+            return SDL_APP_CONTINUE;
+        }
+        SDL_ShowWindow(app->window);
+        SDL_RaiseWindow(app->window);
+        quick_done(app);
+    }
 
     uint64_t start = SDL_GetTicksNS();
     process_pending(app);
