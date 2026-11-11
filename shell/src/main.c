@@ -1920,6 +1920,20 @@ static SDL_AppResult autotest_iterate(np_app *app)
         if (capture_window(app, path))
             SDL_Log("autotest: writing %s failed: %s", path, SDL_GetError());
     }
+    /* A guest walking a PC_WARP list reports each settled stop: one picture per stop. */
+    uint32_t stops = app->core ? np_core_status(app->core, NP_STAT_WARP_STOPS) : 0;
+    if (t->png[0] && stops != t->warp_stops) {
+        t->warp_stops = stops;
+        char path[1100];
+        size_t len = SDL_strlen(t->png);
+        if (len > 4 && !SDL_strcasecmp(t->png + len - 4, ".png"))
+            len -= 4;
+        SDL_snprintf(path, sizeof path, "%.*s-stop-%02u.png", (int)len, t->png, (unsigned)stops);
+        if (capture_window(app, path))
+            SDL_Log("autotest: writing %s failed: %s", path, SDL_GetError());
+        else
+            SDL_Log("autotest: stop %u: %s", (unsigned)stops, path);
+    }
     if (t->ran < t->frames) {
         SDL_RenderPresent(app->renderer);
         if (t->realtime) {

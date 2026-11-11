@@ -47,6 +47,7 @@ typedef struct pc_np_status {
     unsigned in_encounter;
     unsigned in_battle_app;
     unsigned e2e_block;        /* NP_STAT_E2E: the probe's address, 0 when off */
+    unsigned warp_stops;       /* NP_STAT_WARP_STOPS: PC_WARP stops settled */
 } pc_np_status;
 
 enum { PC_NP_QS_NONE = 0, PC_NP_QS_SAVED = 1, PC_NP_QS_REFUSED = 2, PC_NP_QS_FAILED = 3 };

@@ -128,23 +128,52 @@ static void quicksave_done(unsigned result) {
  * sub_02049304 with a Location) the game's own warps run, so the new map's
  * people are loaded from its events as on any arrival. Platinum's
  * equivalent is pc_lab's `map` line.
+ * With several stops (MAP:X:Z:DIR;MAP:X:Z:DIR...), each one waits PC_WARP_SETTLE free frames (default 240) after
+ * arriving, then counts itself in NP_STAT_WARP_STOPS, which an autotest run with png= pictures (the launcher's town
+ * wallpapers), and the next leaves 10 frames later.
  */
 extern void sub_02049274(FieldSystem *fieldSystem, u32 mapId, s32 warpId, u32 x, u32 y, u32 dir);
 
+#define WARP_MAX 48
+
 static void warp_frame(FieldSystem *fs, int ready) {
     extern char *getenv(const char *);
-    static int sState; /* 0 unread, 1 pending, 2 done */
-    static unsigned sMap, sX, sZ, sDir;
+    static int sRead;
+    static unsigned sCount, sNext, sFree, sHold, sSettle = 240;
+    static unsigned sMap[WARP_MAX], sX[WARP_MAX], sZ[WARP_MAX], sDir[WARP_MAX];
 
-    if (sState == 0) {
-        const char *v = getenv("PC_WARP");
-        sState = 2;
-        if (v != NULL && sscanf(v, "%u:%u:%u:%u", &sMap, &sX, &sZ, &sDir) >= 3 && sDir < 4) sState = 1;
+    if (!sRead) {
+        const char *v = getenv("PC_WARP"), *s = getenv("PC_WARP_SETTLE");
+        sRead = 1;
+        if (s != NULL) sscanf(s, "%u", &sSettle);
+        while (v != NULL && sCount < WARP_MAX) {
+            unsigned d = 0;
+            if (sscanf(v, "%u:%u:%u:%u", &sMap[sCount], &sX[sCount], &sZ[sCount], &d) < 3 || d > 3) break;
+            sDir[sCount++] = d;
+            v = strchr(v, ';');
+            if (v != NULL) v++;
+        }
     }
-    if (sState != 1 || !ready) return;
-    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap, sX, sZ, sDir);
-    sub_02049274(fs, sMap, -1, sX, sZ, sDir);
-    sState = 2;
+    if (sCount == 0 || fs == NULL || fs->location == NULL) return;
+    if (sHold > 0) {
+        sHold--;
+        return;
+    }
+    if (sNext > 0 && pc_np_stat.warp_stops < sNext) {
+        if (!ready || fs->location->mapId != sMap[sNext - 1]) {
+            sFree = 0;
+            return;
+        }
+        if (++sFree < sSettle) return;
+        sFree = 0;
+        pc_np_stat.warp_stops = sNext;
+        sHold = 10;
+        return;
+    }
+    if (sNext >= sCount || !ready) return;
+    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap[sNext], sX[sNext], sZ[sNext], sDir[sNext]);
+    sub_02049274(fs, sMap[sNext], -1, sX[sNext], sZ[sNext], sDir[sNext]);
+    sNext++;
 }
 
 /*

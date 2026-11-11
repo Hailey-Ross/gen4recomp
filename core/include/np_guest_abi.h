@@ -71,6 +71,8 @@ enum np_status {
                                     the guest runs with PC_E2E=1 */
     NP_STAT_RESETS = 7,          /* soft resets (np_host_reset) since np_core_create; the runtime
                                     fills it, the guest's own slot is ignored */
+    NP_STAT_WARP_STOPS = 8,      /* PC_WARP stops settled so far: the autotest host writes
+                                    <png>-stop-N.png each time it rises (launcher wallpapers) */
     NP_STAT_COUNT = 16
 };
 

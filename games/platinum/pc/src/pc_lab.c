@@ -105,6 +105,8 @@
 #include "unk_02054884.h"
 #include "vars_flags.h"
 
+#include "pc_np_options.h"
+
 /*
  * The battle lab (PC_LAB_BATTLE), and why it is a second entry point rather
  * than another recipe verb.
@@ -316,7 +318,7 @@ static int sWarpSettled;
 #define SWEEP_MAX      1024
 #define SWEEP_TIMEOUT  3000   /* frames a single map change may take */
 
-struct sweep_entry { int map, warp; };
+struct sweep_entry { int map, warp, x, z; };
 static struct sweep_entry sSweep[SWEEP_MAX];
 static int sSweepCount;
 extern void pc_input_hold_idle(int on);
@@ -325,6 +327,7 @@ static int sSweepAt = -1;      /* which entry is in flight, -1 before the first 
 static FILE *sSweepOut;
 static unsigned long sSweepStarted;
 static int sSweepRecipeApplied;
+static int sSweepHold;         /* frames a stop stays up after its verdict, for the host's picture */
 
 /*
  * The Latin block of the game's charcode enum is contiguous and this reads it
@@ -672,11 +675,14 @@ int pc_lab_boot(void *saveDataVoid)
             exit(2);
         }
         while (fgets(line, sizeof line, f) != NULL && sSweepCount < SWEEP_MAX) {
-            int map, warp;
+            int map, warp, x = 0, z = 0;
             if (line[0] == '#') continue;
-            if (sscanf(line, "%d %d", &map, &warp) != 2) continue;
+            /* MAP WARP, or MAP -1 X Z to stand on a tile (the launcher's town wallpapers). */
+            if (sscanf(line, "%d %d %d %d", &map, &warp, &x, &z) < 2) continue;
             sSweep[sSweepCount].map = map;
             sSweep[sSweepCount].warp = warp;
+            sSweep[sSweepCount].x = x;
+            sSweep[sSweepCount].z = z;
             sSweepCount++;
         }
         fclose(f);
@@ -1186,7 +1192,9 @@ static int sweep_frame(FieldSystem *fs, unsigned long long frame)
         sSweepRecipeApplied = 1;
     }
 
-    if (sSweepAt >= 0) {
+    if (sSweepHold > 0) {
+        if (--sSweepHold > 0) return 1;
+    } else if (sSweepAt >= 0) {
         int arrived = fs->location->mapHeaderID == sSweep[sSweepAt].map
                    && fs->task == NULL;
 
@@ -1220,6 +1228,10 @@ static int sweep_frame(FieldSystem *fs, unsigned long long frame)
                 (int)fs->location->mapHeaderID,
                 fs->location->x, fs->location->z);
         fflush(sSweepOut);
+        /* NP_STAT_WARP_STOPS: an autotest run with png= writes this stop's picture. */
+        pc_np_stat.warp_stops = (unsigned)sSweepAt + 1;
+        sSweepHold = 10;
+        return 1;
     }
 
     sSweepAt++;
@@ -1231,7 +1243,8 @@ static int sweep_frame(FieldSystem *fs, unsigned long long frame)
 
     pc_input_hold_idle(0);
     Location_Set(&loc, (enum MapHeaderID)sSweep[sSweepAt].map,
-                 sSweep[sSweepAt].warp, 0, 0, FACE_DOWN);
+                 sSweep[sSweepAt].warp < 0 ? WARP_ID_NONE : sSweep[sSweepAt].warp,
+                 sSweep[sSweepAt].x, sSweep[sSweepAt].z, FACE_DOWN);
     *FieldOverworldState_GetPlayerLocation(
         SaveData_GetFieldOverworldState(SaveData_Ptr())) = loc;
     sWarpTo = loc;

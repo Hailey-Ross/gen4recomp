@@ -146,6 +146,7 @@ typedef struct np_autotest {
     np_press presses[NP_AUTOTEST_MAX_PRESS]; /* press= schedule */
     int npress;
     int shot_every; /* shots=N: also write <png>-<iteration>.png every N iterations */
+    uint32_t warp_stops; /* NP_STAT_WARP_STOPS last seen: a rise writes <png>-stop-N.png */
     char drop[1024];    /* storage for a scripted drop event's text */
     char slot[NP_SLOT_NAME_MAX + 1]; /* save slot for rom=/synthetic boots */
     int rewind_from, rewind_frames;  /* rewind=F+N: hold rewind for N iterations from F */

@@ -530,24 +530,53 @@ static void fish_trace(FieldSystem *fs) {
  * moment the player is free in the field, a map change to MAP at tile X,Z
  * facing DIR (0 up, 1 down, 2 left, 3 right), through the same field task the
  * game's own warps run, so the map's people are loaded as on any arrival.
+ * With several stops (MAP:X:Z:DIR;MAP:X:Z:DIR...), each one waits PC_WARP_SETTLE free frames (default 240) after
+ * arriving, then counts itself in NP_STAT_WARP_STOPS, which an autotest run with png= pictures (the launcher's town
+ * wallpapers), and the next leaves 10 frames later.
  */
+#define WARP_MAX 48
+
 static void warp_frame(FieldSystem *fs, int ready) {
     extern char *getenv(const char *);
     extern int sscanf(const char *restrict, const char *restrict, ...);
-    static int sState; /* 0 unread, 1 pending, 2 done */
-    static unsigned sMap, sX, sZ, sDir;
+    static int sRead;
+    static unsigned sCount, sNext, sFree, sHold, sSettle = 240;
+    static unsigned sMap[WARP_MAX], sX[WARP_MAX], sZ[WARP_MAX], sDir[WARP_MAX];
 
-    if (sState == 0) {
-        const char *v = getenv("PC_WARP");
-        sState = 2;
-        if (v != NULL && sscanf(v, "%u:%u:%u:%u", &sMap, &sX, &sZ, &sDir) >= 3 && sDir < 4) sState = 1;
+    if (!sRead) {
+        const char *v = getenv("PC_WARP"), *s = getenv("PC_WARP_SETTLE");
+        sRead = 1;
+        if (s != NULL) sscanf(s, "%u", &sSettle);
+        while (v != NULL && sCount < WARP_MAX) {
+            unsigned d = 0;
+            if (sscanf(v, "%u:%u:%u:%u", &sMap[sCount], &sX[sCount], &sZ[sCount], &d) < 3 || d > 3) break;
+            sDir[sCount++] = d;
+            v = strchr(v, ';');
+            if (v != NULL) v++;
+        }
     }
+    if (sCount == 0 || fs == NULL || fs->location == NULL) return;
     /* The launcher's wallpaper is of the town, not of someone standing in it. */
-    if (sState == 2 && sMap != 0 && ready) MapObject_SetVisible(PlayerAvatar_GetMapObject(fs->playerAvatar), TRUE);
-    if (sState != 1 || !ready) return;
-    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap, sX, sZ, sDir);
-    sub_020538C0(fs, sMap, -1, sX, sZ, sDir);
-    sState = 2;
+    if (sNext > 0 && ready) MapObject_SetVisible(PlayerAvatar_GetMapObject(fs->playerAvatar), TRUE);
+    if (sHold > 0) {
+        sHold--;
+        return;
+    }
+    if (sNext > 0 && pc_np_stat.warp_stops < sNext) {
+        if (!ready || fs->location->mapId != sMap[sNext - 1]) {
+            sFree = 0;
+            return;
+        }
+        if (++sFree < sSettle) return;
+        sFree = 0;
+        pc_np_stat.warp_stops = sNext;
+        sHold = 10;
+        return;
+    }
+    if (sNext >= sCount || !ready) return;
+    fprintf(stderr, "pc-np: PC_WARP to map %u (%u,%u) dir %u\n", sMap[sNext], sX[sNext], sZ[sNext], sDir[sNext]);
+    sub_020538C0(fs, sMap[sNext], -1, sX[sNext], sZ[sNext], sDir[sNext]);
+    sNext++;
 }
 
 static void np_frame(void) {
