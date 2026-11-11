@@ -667,15 +667,31 @@ int pc_lab_boot(void *saveDataVoid)
     if (path == NULL || path[0] == '\0') return 0;
 
     if (sweep != NULL && sweep[0] != '\0') {
-        FILE *f = fopen(sweep, "r");
+        /* inline:LINE;LINE... like PC_LAB's recipe: the guest may have no file system to read one from. */
+        const int isInline = strncmp(sweep, "inline:", 7) == 0;
+        const char *next = isInline ? sweep + 7 : NULL;
+        FILE *f = isInline ? NULL : fopen(sweep, "r");
         char line[128];
 
-        if (f == NULL) {
+        if (!isInline && f == NULL) {
             fprintf(stderr, "pc_lab: cannot open %s\n", sweep);
             exit(2);
         }
-        while (fgets(line, sizeof line, f) != NULL && sSweepCount < SWEEP_MAX) {
+        while (sSweepCount < SWEEP_MAX) {
             int map, warp, x = 0, z = 0;
+            if (isInline) {
+                const char *semi;
+                size_t n;
+                if (next == NULL || *next == '\0') break;
+                semi = strchr(next, ';');
+                n = semi != NULL ? (size_t)(semi - next) : strlen(next);
+                if (n >= sizeof line) n = sizeof line - 1;
+                memcpy(line, next, n);
+                line[n] = '\0';
+                next = semi != NULL ? semi + 1 : NULL;
+            } else if (fgets(line, sizeof line, f) == NULL) {
+                break;
+            }
             if (line[0] == '#') continue;
             /* MAP WARP, or MAP -1 X Z to stand on a tile (the launcher's town wallpapers). */
             if (sscanf(line, "%d %d %d %d", &map, &warp, &x, &z) < 2) continue;
@@ -685,7 +701,7 @@ int pc_lab_boot(void *saveDataVoid)
             sSweep[sSweepCount].z = z;
             sSweepCount++;
         }
-        fclose(f);
+        if (f != NULL) fclose(f);
 
         sSweepOut = sweepout != NULL && sweepout[0] != '\0'
                   ? fopen(sweepout, "w") : stdout;
