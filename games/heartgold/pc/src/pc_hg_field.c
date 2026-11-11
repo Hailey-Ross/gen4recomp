@@ -540,13 +540,14 @@ static void warp_frame(FieldSystem *fs, int ready) {
     extern char *getenv(const char *);
     extern int sscanf(const char *restrict, const char *restrict, ...);
     static int sRead;
-    static unsigned sCount, sNext, sFree, sHold, sSettle = 240;
+    static unsigned sCount, sNext, sFree, sHold, sWaited, sSettle = 240, sGiveUp = 1800;
     static unsigned sMap[WARP_MAX], sX[WARP_MAX], sZ[WARP_MAX], sDir[WARP_MAX];
 
     if (!sRead) {
-        const char *v = getenv("PC_WARP"), *s = getenv("PC_WARP_SETTLE");
+        const char *v = getenv("PC_WARP"), *s = getenv("PC_WARP_SETTLE"), *g = getenv("PC_WARP_GIVEUP");
         sRead = 1;
         if (s != NULL) sscanf(s, "%u", &sSettle);
+        if (g != NULL) sscanf(g, "%u", &sGiveUp);
         while (v != NULL && sCount < WARP_MAX) {
             unsigned d = 0;
             if (sscanf(v, "%u:%u:%u:%u", &sMap[sCount], &sX[sCount], &sZ[sCount], &d) < 3 || d > 3) break;
@@ -563,12 +564,20 @@ static void warp_frame(FieldSystem *fs, int ready) {
         return;
     }
     if (sNext > 0 && pc_np_stat.warp_stops < sNext) {
+        /* A stop that never arrives still counts, so the pictures stay numbered by stop: the log says to drop it. */
+        if (++sWaited > sGiveUp) {
+            fprintf(stderr, "pc-np: PC_WARP stop %u never arrived (map %u)\n", sNext, sMap[sNext - 1]);
+            sWaited = sFree = 0;
+            pc_np_stat.warp_stops = sNext;
+            sHold = 10;
+            return;
+        }
         if (!ready || fs->location->mapId != sMap[sNext - 1]) {
             sFree = 0;
             return;
         }
         if (++sFree < sSettle) return;
-        sFree = 0;
+        sFree = sWaited = 0;
         pc_np_stat.warp_stops = sNext;
         sHold = 10;
         return;
