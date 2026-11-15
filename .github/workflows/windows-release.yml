@@ -83,8 +83,8 @@ jobs:
           tools/fetch_toolchains.sh windows
           # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
           sed -i 's#lib/MSL_c/#lib/MSL_C/#g' games/heartgold/main.lsf
-          # The other games' builds use tools that Platinum's sets up.
-          [ "${{ matrix.game }}" = platinum ] || tools/rom_build.sh platinum
+          # The other games' builds use the compilers and SDK that Platinum's configure fetches: no Platinum ROM needed.
+          [ "${{ matrix.game }}" = platinum ] || tools/rom_build.sh platinum configure
           tools/rom_build.sh ${{ matrix.game }}
           (cd games/platinum && [ "${{ matrix.game }}" = platinum ] && make -f pc/Makefile.wasm -j4 || true)
           [ "${{ matrix.dir }}" = platinum ] || (cd games/${{ matrix.dir }} && make -f pc/Makefile.wasm -j4 ${{ matrix.ver }})
