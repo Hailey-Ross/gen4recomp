@@ -28,7 +28,8 @@ env:
 
 jobs:
   # Each game builds on a runner of its own, and its compiled core is kept until something it's built from changes.
-  # Only libraries and the compiler's own files are ever kept: never games/*/build, which holds the ROM link maps.
+  # Only libraries, the compile cache and the compiler's own files are ever kept: never games/*/build, which
+  # holds the ROM link maps.
   core:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -58,14 +59,15 @@ jobs:
 
       - name: Free disk space
         if: steps.saved.outputs.cache-hit != 'true'
-        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        # In the background: deleting took 1 to 4 minutes, and the build needs the room only later.
+        run: sudo sh -c 'nohup rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL >/dev/null 2>&1 &'
 
       - name: Set up
         if: steps.saved.outputs.cache-hit != 'true'
         # Linux limits one command to 128 KB, and some build steps list thousands of files by their full path.
         run: |
           sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build zip ccache
 
       - name: Restore the compiler's runtime
         if: steps.saved.outputs.cache-hit != 'true'
@@ -74,11 +76,23 @@ jobs:
           path: .cache/zig
           key: zig-${{ hashFiles('tools/toolchains.lock') }}
 
+      - name: Restore the compile cache
+        if: steps.saved.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/ccache
+          key: ccache-${{ matrix.game }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.game }}-
+
       - name: Build
         if: steps.saved.outputs.cache-hit != 'true'
         working-directory: /g
         env:
           NP_WIN_TARGET: np_guest_${{ matrix.game }}
+          # tools/ccache.sh takes ccache when it's installed: most of a game's files are the same as last run, so their wasm
+          # and native objects come from this cache (the two compiles were 14 of 19 minutes).
+          NP_CCACHE_DIR: /g/.cache/ccache
+          NP_CCACHE_BASEDIR: /g
         run: |
           tools/fetch_toolchains.sh windows
           # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
@@ -92,6 +106,15 @@ jobs:
           tools/package_windows.sh
           mkdir -p guest
           cp "$(find build/win-app -name "*np_guest_${{ matrix.game }}*.a" | head -1)" guest/
+          CCACHE_DIR=$NP_CCACHE_DIR ccache -s
+
+      - name: Save the compile cache
+        # Saved even when the build fails, so a retry doesn't start cold.
+        if: always() && steps.saved.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/ccache
+          key: ccache-${{ matrix.game }}-${{ github.sha }}
 
       - uses: actions/upload-artifact@v4
         with:
