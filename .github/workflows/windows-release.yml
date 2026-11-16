@@ -93,6 +93,8 @@ jobs:
           # and native objects come from this cache (the two compiles were 14 of 19 minutes).
           NP_CCACHE_DIR: /g/.cache/ccache
           NP_CCACHE_BASEDIR: /g
+          # Its 8 GB free-space floor is for a dev PC: a runner has less while the cleanup runs, and the cache stays small.
+          NP_CCACHE_MIN_FREE_GB: "2"
         run: |
           tools/fetch_toolchains.sh windows
           # The link list says MSL_c and the folder is MSL_C, which only a case-insensitive disk accepts.
@@ -170,6 +172,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="windows-${GITHUB_SHA:0:9}"
+          # A rerun of the same commit (a clean build to check something) keeps the release already there.
+          if gh release view "$tag" >/dev/null 2>&1; then echo "$tag is already published"; exit 0; fi
           gh release create "$tag" build/dist/nativeplat-windows-x64.zip \
             --target "$GITHUB_SHA" --title "Windows build ($tag)" \
             --notes "Platinum, Diamond, Pearl, HeartGold and SoulSilver for the nativeMons launcher. No games are included: you need your own ROMs."
