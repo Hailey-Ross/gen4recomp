@@ -52,7 +52,7 @@ jobs:
       - name: Use the saved core
         id: saved
         if: ${{ !inputs.clean }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: guest/
           key: guest-${{ matrix.game }}-${{ steps.key.outputs.h }}
@@ -71,14 +71,14 @@ jobs:
 
       - name: Restore the compiler's runtime
         if: steps.saved.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .cache/zig
           key: zig-${{ hashFiles('tools/toolchains.lock') }}
 
       - name: Restore the compile cache
         if: steps.saved.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .cache/ccache
           key: ccache-${{ matrix.game }}-${{ github.sha }}
@@ -113,12 +113,12 @@ jobs:
       - name: Save the compile cache
         # Saved even when the build fails, so a retry doesn't start cold.
         if: always() && steps.saved.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .cache/ccache
           key: ccache-${{ matrix.game }}-${{ github.sha }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: guest-${{ matrix.game }}
           path: guest/*.a
@@ -137,13 +137,13 @@ jobs:
           sudo mkdir /g && sudo mount --bind "$GITHUB_WORKSPACE" /g
           sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: guest
           merge-multiple: true
 
       - name: Save the compiler's runtime
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .cache/zig
           key: zig-${{ hashFiles('tools/toolchains.lock') }}
